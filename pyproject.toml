@@ -1,0 +1,14 @@
+[project]
+name = "agentic-qa-for-software-delivery"
+version = "0.1.0"
+description = "Building an Agentic QA for Software Delivery"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+agentic-qa-for-software-delivery = "agentic_qa_for_software_delivery:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
