@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Order #{{ order.id }}{% endblock %}
+{% block content %}
+{% if placed %}<p class="success" role="status">Thank you! Your order has been placed.</p>{% endif %}
+<h1>Order #{{ order.id }}</h1>
+<p>Status: <strong data-testid="order-status">{{ order.status }}</strong></p>
+<ul>
+  {% for line in order.lines %}<li>{{ line.quantity }} × {{ line.title }} (${{ line.unit_price }})</li>{% endfor %}
+</ul>
+<dl class="totals">
+  <dt>Subtotal</dt><dd>${{ order.subtotal }}</dd>
+  <dt>Discount</dt><dd>-${{ order.discount }}</dd>
+  <dt>Shipping</dt><dd>${{ order.shipping }}</dd>
+  <dt>Total</dt><dd><strong>${{ order.total }}</strong></dd>
+</dl>
+{% if order.status != "cancelled" %}
+<form method="post" action="/orders/{{ order.id }}/cancel">
+  <button type="submit">Cancel order</button>
+</form>
+{% endif %}
+{% endblock %}

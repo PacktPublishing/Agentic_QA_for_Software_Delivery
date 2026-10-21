@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ book.title }}{% endblock %}
+{% block content %}
+<article class="book">
+  <h1>{{ book.title }}</h1>
+  <p class="author">by {{ book.author }} · {{ book.published_year }}</p>
+  <p class="price" data-testid="book-price">${{ price_display }}</p>
+  <p>{{ book.description }}</p>
+  <p class="muted">ISBN {{ book.isbn }} · {{ book.genres | join(", ") }}</p>
+  {% if book.stock > 0 %}<p class="stock">{{ book.stock }} in stock</p>{% else %}<p class="badge out">Out of stock</p>{% endif %}
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+  <form method="post" action="/books/{{ book.id }}/add" class="add">
+    <label>Quantity <input type="number" name="quantity" value="1" min="1" max="10"></label>
+    <button type="submit">Add to cart</button>
+  </form>
+</article>
+<section class="reviews">
+  <h2>Reviews</h2>
+  {% for r in reviews %}
+    <blockquote><strong>{{ "★" * r.rating }}</strong> {{ r.comment }}</blockquote>
+  {% else %}
+    <p class="muted">No reviews yet.</p>
+  {% endfor %}
+</section>
+{% endblock %}

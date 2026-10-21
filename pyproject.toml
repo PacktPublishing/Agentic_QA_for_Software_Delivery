@@ -1,14 +1,38 @@
 [project]
 name = "agentic-qa-for-software-delivery"
 version = "0.1.0"
-description = "Building an Agentic QA for Software Delivery"
+description = "Add your description here"
 readme = "README.md"
+authors = [
+    { name = "Julio de Lima", email = "iam@juliodelima.com.br" }
+]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "anthropic>=1.17.0",
+    "fastapi>=0.156.4",
+    "httpx>=0.28.1",
+    "jinja2>=3.1.6",
+    "mcp>=2.3.0",
+    "python-dotenv>=1.2.4",
+    "python-multipart>=0.0.32",
+    "pyyaml>=6.0.3",
+    "uvicorn>=0.54.0",
+]
 
 [project.scripts]
-agentic-qa-for-software-delivery = "agentic_qa_for_software_delivery:main"
+booknest = "booknest.__main__:main"
+
+[tool.uv.build-backend]
+module-root = ""
+module-name = "booknest"
 
 [build-system]
 requires = ["uv_build>=0.12.17,<0.13.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.1",
+]

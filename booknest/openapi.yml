@@ -1,0 +1,754 @@
+openapi: 3.0.3
+info:
+  title: BookNest API
+  version: 1.0.0
+  description: |
+    Online bookstore used as the system under test in *Agentic QA for Software Delivery*.
+
+    **Conventions**
+    - All request and response bodies are JSON (`application/json`).
+    - Monetary values are **decimal strings in USD** (e.g. `"12.50"`).
+    - Timestamps are ISO 8601 UTC date-times.
+    - Business-rule errors (`DomainError`) return `{"detail": "<message>"}` (string).
+    - Schema validation errors return `422` with a FastAPI `HTTPValidationError` body.
+    - Authenticated endpoints require `Authorization: Bearer <token>`; the token comes from `POST /api/auth/login`.
+      Tokens are signed JWTs (HS256) carrying `sub` (user id), `jti`, `iat` and `exp` (default 60 min,
+      configurable via `BOOKNEST_JWT_TTL_MINUTES`). Expired, tampered or revoked tokens get `401`.
+servers:
+  - url: http://localhost:8000
+    description: Local development server (adjust host/port to your `booknest` run configuration)
+tags:
+  - name: system
+  - name: auth
+  - name: catalog
+  - name: reviews
+  - name: cart
+  - name: orders
+  - name: admin
+  - name: assistant
+  - name: testing
+
+paths:
+  /api/health:
+    get:
+      tags: [system]
+      operationId: health
+      summary: Liveness check
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, example: ok }
+
+  /api/auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: Create an account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "201":
+          description: Account created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "409":
+          description: An account with this email already exists.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: An account with this email already exists }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Exchange credentials for a bearer token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: Login succeeded.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenResponse" }
+        "401":
+          description: Unknown email or wrong password.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                unknownEmail:
+                  value: { detail: No account found for this email }
+                wrongPassword:
+                  value: { detail: Incorrect password }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/auth/me:
+    get:
+      tags: [auth]
+      operationId: me
+      summary: Get the authenticated user
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Current user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/books:
+    get:
+      tags: [catalog]
+      operationId: listBooks
+      summary: Search and paginate the catalog
+      description: |
+        `q` matches the title case-insensitively and the author case-sensitively (substring).
+        `genre` is matched case-insensitively against the book's genres. Results are ordered by id.
+        Note: `total` is computed after `q` but before `genre` filtering.
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 100 }
+          description: Substring to search in title or author.
+        - name: genre
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: page_size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        "200":
+          description: A page of books.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BookPage" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/books/{book_id}:
+    get:
+      tags: [catalog]
+      operationId: getBook
+      summary: Get a book
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      responses:
+        "200":
+          description: The book.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Book" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/books/{book_id}/reviews:
+    get:
+      tags: [reviews]
+      operationId: listReviews
+      summary: List reviews for a book
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      responses:
+        "200":
+          description: Reviews for the book (empty list if none).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Review" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    post:
+      tags: [reviews]
+      operationId: addReview
+      summary: Review a book (one review per user per book)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewRequest" }
+      responses:
+        "201":
+          description: Review created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Review" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The user has already reviewed this book.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: You have already reviewed this book }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/cart:
+    get:
+      tags: [cart]
+      operationId: getCart
+      summary: View the cart with computed totals
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: The cart.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/cart/items:
+    post:
+      tags: [cart]
+      operationId: addCartItem
+      summary: Add a book to the cart (quantities accumulate)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddCartItemRequest" }
+      responses:
+        "200":
+          description: Updated cart.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Resulting quantity exceeds available stock.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: "Only 3 copies of 'Dune' are in stock" }
+        "422":
+          description: |
+            Either schema validation failed (`HTTPValidationError`) or the resulting line quantity
+            exceeds the per-line maximum (`Error`, e.g. "You can order at most 10 copies of a book").
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/HTTPValidationError" }
+                  - { $ref: "#/components/schemas/Error" }
+
+  /api/cart/items/{book_id}:
+    patch:
+      tags: [cart]
+      operationId: updateCartItem
+      summary: Set the quantity of a cart line
+      description: |
+        Sets the quantity directly. The service does not re-validate the value against stock or the per-line maximum.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateCartItemRequest" }
+      responses:
+        "200":
+          description: Updated cart.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: The book is not in the cart.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: Book 7 is not in your cart }
+        "422": { $ref: "#/components/responses/ValidationError" }
+    delete:
+      tags: [cart]
+      operationId: removeCartItem
+      summary: Remove a line from the cart
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/BookId"
+      responses:
+        "200":
+          description: Updated cart.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: The book is not in the cart.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: Book 7 is not in your cart }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/cart/coupon:
+    post:
+      tags: [cart]
+      operationId: applyCoupon
+      summary: Apply a coupon code
+      description: Codes are trimmed and upper-cased before lookup.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplyCouponRequest" }
+      responses:
+        "200":
+          description: Updated cart with the coupon applied.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Coupon does not exist.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: Coupon 'FOO' does not exist }
+        "422":
+          description: |
+            Schema validation failed (`HTTPValidationError`) or the coupon is not valid for this cart
+            (`Error`, e.g. expired or minimum subtotal not met).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/HTTPValidationError" }
+                  - { $ref: "#/components/schemas/Error" }
+    delete:
+      tags: [cart]
+      operationId: removeCoupon
+      summary: Remove the applied coupon (idempotent)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Updated cart.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/orders:
+    post:
+      tags: [orders]
+      operationId: checkout
+      summary: Place an order from the current cart
+      description: Decrements stock for every line.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201":
+          description: Order placed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "400":
+          description: The cart is empty.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: Your cart is empty }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409":
+          description: A line exceeds available stock.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: "Only 1 copies of 'Dune' are in stock" }
+    get:
+      tags: [orders]
+      operationId: listOrders
+      summary: List the authenticated user's orders
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Orders (empty list if none).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/orders/{order_id}:
+    get:
+      tags: [orders]
+      operationId: getOrder
+      summary: Get one of the user's orders
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: The order.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/OrderNotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/orders/{order_id}/cancel:
+    post:
+      tags: [orders]
+      operationId: cancelOrder
+      summary: Cancel an order
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: Order cancelled.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/OrderNotFound" }
+        "409":
+          description: Order is already cancelled.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: This order is already cancelled }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/orders/{order_id}/ship:
+    post:
+      tags: [admin]
+      operationId: shipOrder
+      summary: Mark an order as shipped (administrators only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: Order shipped.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Caller is not an administrator.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: Only administrators can ship orders }
+        "404": { $ref: "#/components/responses/OrderNotFound" }
+        "409":
+          description: Order is not in a shippable state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: Cannot ship an order that is cancelled }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/assistant/ask:
+    post:
+      tags: [assistant]
+      operationId: askLibrarian
+      summary: Ask the AI librarian for book recommendations
+      description: |
+        Does not require authentication. Backed by the Anthropic API; answers are non-deterministic.
+        If the model refuses, a fixed apology message is returned with `200`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AskRequest" }
+      responses:
+        "200":
+          description: Answer from the librarian.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AskResponse" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "503":
+          description: Assistant unavailable (missing/invalid API key, connection failure or rate limit).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                noKey:
+                  value: { detail: "The librarian is unavailable: no API key configured" }
+                invalidKey:
+                  value: { detail: "The librarian is unavailable: invalid API key" }
+                transient:
+                  value: { detail: The librarian is unavailable right now }
+
+  /api/testing/reset:
+    post:
+      tags: [testing]
+      operationId: resetStore
+      summary: Reset the in-memory store to seed data (test support)
+      description: Only available when `BOOKNEST_TESTING=1` (the default); otherwise responds `404`.
+      responses:
+        "204":
+          description: Store reset. No body.
+        "404":
+          description: Testing endpoints are disabled.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example: { detail: Not Found }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT returned by `POST /api/auth/login`.
+
+  parameters:
+    BookId:
+      name: book_id
+      in: path
+      required: true
+      schema: { type: integer }
+    OrderId:
+      name: order_id
+      in: path
+      required: true
+      schema: { type: integer }
+
+  responses:
+    Unauthorized:
+      description: Missing, malformed or unknown bearer token.
+      headers:
+        WWW-Authenticate:
+          description: Authentication challenge.
+          schema: { type: string, example: Bearer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { detail: Authentication required }
+    NotFound:
+      description: Book not found.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { detail: Book 999 not found }
+    OrderNotFound:
+      description: Order not found (or belongs to another user).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { detail: Order 999 not found }
+    ValidationError:
+      description: Request failed schema validation (FastAPI default error shape).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/HTTPValidationError" }
+
+  schemas:
+    Error:
+      type: object
+      required: [detail]
+      properties:
+        detail: { type: string }
+    HTTPValidationError:
+      type: object
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            required: [loc, msg, type]
+            properties:
+              loc:
+                type: array
+                items:
+                  oneOf: [{ type: string }, { type: integer }]
+              msg: { type: string }
+              type: { type: string }
+    Money:
+      type: string
+      pattern: '^-?\d+(\.\d+)?$'
+      description: Decimal amount in USD, serialized as a string.
+      example: "12.50"
+
+    RegisterRequest:
+      type: object
+      required: [email, password, name]
+      properties:
+        email:
+          type: string
+          pattern: '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+          example: reader@example.com
+        password: { type: string, minLength: 7, maxLength: 128 }
+        name: { type: string, minLength: 1, maxLength: 80 }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string }
+        password: { type: string }
+    TokenResponse:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: Signed JWT (HS256), sent as a Bearer token in the Authorization header.
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.signature
+        token_type: { type: string, default: bearer }
+    User:
+      type: object
+      required: [id, email, name]
+      properties:
+        id: { type: integer }
+        email: { type: string }
+        name: { type: string }
+
+    Book:
+      type: object
+      required: [id, title, author, isbn, price, stock, in_stock, genres, description, published_year]
+      properties:
+        id: { type: integer }
+        title: { type: string }
+        author: { type: string }
+        isbn: { type: string }
+        price: { $ref: "#/components/schemas/Money" }
+        stock: { type: integer }
+        in_stock: { type: boolean, description: "`true` when stock > 0." }
+        genres:
+          type: array
+          items: { type: string }
+        description: { type: string }
+        published_year: { type: integer }
+    BookPage:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Book" }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+
+    AddCartItemRequest:
+      type: object
+      required: [book_id]
+      properties:
+        book_id: { type: integer }
+        quantity: { type: integer, minimum: 1, maximum: 10, default: 1 }
+    UpdateCartItemRequest:
+      type: object
+      required: [quantity]
+      properties:
+        quantity: { type: integer }
+    ApplyCouponRequest:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string, minLength: 1, maxLength: 32 }
+    CartLine:
+      type: object
+      required: [book_id, title, unit_price, quantity, line_total]
+      properties:
+        book_id: { type: integer }
+        title: { type: string }
+        unit_price: { $ref: "#/components/schemas/Money" }
+        quantity: { type: integer }
+        line_total: { $ref: "#/components/schemas/Money" }
+    Cart:
+      type: object
+      required: [lines, subtotal, discount, shipping, total, coupon_code, coupon_error]
+      properties:
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/CartLine" }
+        subtotal: { $ref: "#/components/schemas/Money" }
+        discount: { $ref: "#/components/schemas/Money" }
+        shipping: { $ref: "#/components/schemas/Money" }
+        total: { $ref: "#/components/schemas/Money" }
+        coupon_code:
+          type: string
+          nullable: true
+          description: Applied coupon, or null if none or currently invalid.
+        coupon_error:
+          type: string
+          nullable: true
+          description: Why the stored coupon no longer applies, if so.
+
+    OrderLine:
+      type: object
+      required: [book_id, title, unit_price, quantity]
+      properties:
+        book_id: { type: integer }
+        title: { type: string }
+        unit_price: { $ref: "#/components/schemas/Money" }
+        quantity: { type: integer }
+    Order:
+      type: object
+      required: [id, user_id, status, lines, subtotal, discount, shipping, total, coupon_code, created_at]
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        status:
+          type: string
+          enum: [placed, shipped, delivered, cancelled]
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/OrderLine" }
+        subtotal: { $ref: "#/components/schemas/Money" }
+        discount: { $ref: "#/components/schemas/Money" }
+        shipping: { $ref: "#/components/schemas/Money" }
+        total: { $ref: "#/components/schemas/Money" }
+        coupon_code: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    ReviewRequest:
+      type: object
+      required: [rating]
+      properties:
+        rating: { type: integer, minimum: 0, maximum: 5 }
+        comment: { type: string, maxLength: 500, default: "" }
+    Review:
+      type: object
+      required: [id, book_id, user_id, rating, comment, created_at]
+      properties:
+        id: { type: integer }
+        book_id: { type: integer }
+        user_id: { type: integer }
+        rating: { type: integer }
+        comment: { type: string }
+        created_at: { type: string, format: date-time }
+
+    AskRequest:
+      type: object
+      required: [question]
+      properties:
+        question: { type: string, minLength: 1, maxLength: 1000 }
+    AskResponse:
+      type: object
+      required: [answer, books_considered]
+      properties:
+        answer: { type: string }
+        books_considered:
+          type: array
+          items: { type: integer }
+          description: IDs of catalog books supplied to the model as context.

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Ask the Librarian{% endblock %}
+{% block content %}
+<h1>Ask the Librarian</h1>
+<p class="muted">Tell us what you like and our AI librarian will suggest books from our catalog.</p>
+<form method="post" action="/librarian" class="stack">
+  <label>Your question <textarea name="question" rows="3" required>{{ question }}</textarea></label>
+  <button type="submit">Ask</button>
+</form>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if answer %}<div class="answer" data-testid="librarian-answer">{{ answer }}</div>{% endif %}
+{% endblock %}

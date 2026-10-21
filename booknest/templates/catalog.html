@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Catalog{% endblock %}
+{% block content %}
+<h1>Find your next book</h1>
+<form method="get" action="/" class="search" role="search">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search by title or author" aria-label="Search books">
+  <select name="genre" aria-label="Genre">
+    <option value="">All genres</option>
+    {% for g in genres %}<option value="{{ g }}" {% if g == genre %}selected{% endif %}>{{ g }}</option>{% endfor %}
+  </select>
+  <button type="submit">Search</button>
+</form>
+<p class="muted" data-testid="result-count">{{ result.total }} book(s) found</p>
+<ul class="grid">
+  {% for book in result.items %}
+  <li class="card" data-testid="book-card">
+    <a href="/books/{{ book.id }}"><h2>{{ book.title }}</h2></a>
+    <p class="author">{{ book.author }}</p>
+    <p class="price">${{ book.price }}</p>
+    {% if book.stock == 0 %}<p class="badge out">Out of stock</p>{% endif %}
+  </li>
+  {% else %}
+  <li class="empty">No books match your search.</li>
+  {% endfor %}
+</ul>
+<nav class="pager">
+  {% if result.page > 1 %}<a href="/?q={{ q }}&genre={{ genre }}&page={{ result.page - 1 }}">← Previous</a>{% endif %}
+  {% if result.page * result.page_size < result.total %}<a href="/?q={{ q }}&genre={{ genre }}&page={{ result.page + 1 }}">Next →</a>{% endif %}
+</nav>
+{% endblock %}

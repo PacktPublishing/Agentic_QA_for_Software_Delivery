@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}BookNest{% endblock %} · BookNest</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">📚 BookNest</a>
+    <nav>
+      <a href="/">Catalog</a>
+      <a href="/librarian">Ask the Librarian</a>
+      {% if user %}
+        <a href="/orders">My orders</a>
+        <a href="/cart" data-testid="cart-link">Cart ({{ cart_count }})</a>
+        <form method="post" action="/logout" class="inline">
+          <button type="submit" class="link">Log out {{ user.name.split()[0] }}</button>
+        </form>
+      {% else %}
+        <a href="/login">Log in</a>
+        <a href="/register">Create account</a>
+      {% endif %}
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer>BookNest is a demo store for the book <em>Agentic QA for Software Delivery</em>.</footer>
+</body>
+</html>

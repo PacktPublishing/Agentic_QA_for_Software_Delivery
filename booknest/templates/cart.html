@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Your cart{% endblock %}
+{% block content %}
+<h1>Your cart</h1>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if cart.lines %}
+<table class="cart">
+  <thead><tr><th>Book</th><th>Price</th><th>Quantity</th><th>Total</th><th></th></tr></thead>
+  <tbody>
+  {% for line in cart.lines %}
+    <tr data-testid="cart-line">
+      <td><a href="/books/{{ line.book.id }}">{{ line.book.title }}</a></td>
+      <td>${{ line.book.price }}</td>
+      <td>
+        <form method="post" action="/cart/{{ line.book.id }}/update" class="inline">
+          <input type="number" name="quantity" value="{{ line.quantity }}" aria-label="Quantity for {{ line.book.title }}">
+          <button type="submit" class="small">Update</button>
+        </form>
+      </td>
+      <td>${{ line.line_total }}</td>
+      <td>
+        <form method="post" action="/cart/{{ line.book.id }}/remove" class="inline">
+          <button type="submit" class="link">Remove</button>
+        </form>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<form method="post" action="/cart/coupon" class="coupon">
+  <label>Coupon code <input type="text" name="code" value="{{ cart.totals.coupon_code or '' }}"></label>
+  <button type="submit">Apply</button>
+</form>
+{% if cart.totals.coupon_error %}<p class="warning">{{ cart.totals.coupon_error }}</p>{% endif %}
+<dl class="totals">
+  <dt>Subtotal</dt><dd data-testid="subtotal">${{ cart.totals.subtotal }}</dd>
+  <dt>Discount</dt><dd data-testid="discount">-${{ cart.totals.discount }}</dd>
+  <dt>Shipping</dt><dd data-testid="shipping">${{ cart.totals.shipping }}</dd>
+  <dt>Total</dt><dd data-testid="total"><strong>${{ cart.totals.total }}</strong></dd>
+</dl>
+<form method="post" action="/checkout">
+  <button type="submit" class="primary">Place order</button>
+</form>
+{% else %}
+<p>Your cart is empty. <a href="/">Browse the catalog</a>.</p>
+{% endif %}
+{% endblock %}
